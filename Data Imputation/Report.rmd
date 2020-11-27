@@ -1,0 +1,166 @@
+
+---
+title: "Data Imputation Practice"
+author: "Sutianyi Wen"
+date: "10/27/2020"
+output:
+  word_document: default
+  html_document:
+    highlight: pygments
+    theme: spacelab
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# DO NOT ALTER CODE IN THIS CHUNK
+# The very first time you use this R markdown file, you should install each of the packages below.
+# The same goes for other packages you might decide to use
+# Remember that you only need to install each R package once in R (ever -- unless you change computers).
+# All you need to do whenever you need to use the package again (after restarting the R session),
+# is to use the library function to call the package.
+# For example, type install.packages("knitr") in the console to install the knitr package. 
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+# Other libraries
+library(mice)
+library(missMethods)
+library(VIM)
+library(lattice)
+library(ggplot2)
+setwd("~/Desktop/DukeFA20/IDS702/Assignment-4")
+```
+
+* * *
+
+## Lab report
+
+**Load data here**
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+# Enter your code for loading the data here
+tree = read.csv('treeage.txt')
+nhanes = read.csv('nhanes.csv')
+drop <- c('sdmvstra','sdmvpsu','ridageyr','wtmec2yr')
+nhanes = nhanes[,!(names(nhanes)%in%drop)]
+nhanes$age <- as.numeric(nhanes$age)
+nhanes$dmdeduc <- as.factor(nhanes$dmdeduc)
+nhanes$indfminc <- as.factor(nhanes$indfminc)
+nhanes$bmxwt <- as.numeric(nhanes$bmxwt)
+nhanes$bmxbmi <- as.numeric(nhanes$bmxbmi)
+nhanes$bmxtri <- as.numeric(nhanes$bmxtri)
+nhanes$bmxwaist <- as.numeric(nhanes$bmxwaist)
+nhanes$bmxthicr <- as.numeric(nhanes$bmxthicr)
+nhanes$bmxarml <- as.numeric(nhanes$bmxarml)
+nhanes$riagendr <- as.factor(nhanes$riagendr)
+nhanes$ridreth2 <- as.factor(nhanes$ridreth2)
+nhanes[nhanes == '.'] <- NA
+```
+
+### Part1 - Question 1: 
+
+The R commands to generate missing values are printed below. There are 6 missing values in $age$ column
+
+```{r,message=FALSE,warning=FALSE}
+tree_mcar <- delete_MCAR(ds=tree,p=0.3,cols_mis =c('age'))
+tree_mcar
+```
+
+### Part1 - Question 2:
+
+Let's first look at the scatter plots. I pulled out 2 ideal imputation from xyplot's result. As you can see from the plots below, red dots are generated and they're really close to the observed values.
+
+<center>
+  ![scatter-1](Question2-scatter-1.png)
+  ![scatter-2](Question2-scatter-2.png)
+  
+</center>
+
+Then Let's take a look at the density plot. The density plots for 50 imputed data(red line) share the same shape as the observed density plot(blue line). Most of the red density line have the same center as observed density line and a good portion of the red lines have a really similar look as blue lines.
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+tree_imp <- mice(tree_mcar,m=50,
+                defaultMethod = c("norm", "logreg", "polyreg", "polr"),print=F)
+densityplot(tree_imp)
+```
+
+Based on the marginal distribution of age(density plot) and the scatter plot of age versus diameter, I think the imputation quality is pretty good since the generated red dots are close to observed data in scatter plot and the red density lines are pretty good match with observed blue density line.
+
+### Part1 - Question 3:
+
+From the summary of linear regression, it's not meaningful to interpret the intercept because no trees have a negative age. With everything staying the same, one unit increase in tree diameter will result in 14.55 years increase in age. Therefore, diameter and age have a positive association and diameter is a significant predictor because the p-value is less than 0.05.
+
+```{r}
+lm_imp <- with(data=tree_imp,lm(age ~ diameter))
+lm_model <- pool(lm_imp)
+summary(lm_model)
+```
+
+
+### Part2 - Question 1:
+
+First, let's look at the imputed scatter plots for bmi by age. The imputed data points are mostly within the observed data as you can see.
+
+<center>
+
+  ![scatter-agea](age-bmi-scatter1.png)
+  ![scatter-ageb](age-bmi-scatter2.png)
+
+</center>
+
+Then, let's take a look at imputed scatter plot for bmi by gender.Because gender is a binary variable, imputed variables belongs to either one of the category. The imputed points are also close to observed data so the imputation is good.
+
+<center>
+
+  ![scatter-gendera](gender-bmi-scatter1.png)
+  ![scatter-genderb](gender-bmi-scatter2.png)
+
+</center>
+
+Finally, let's check out the marginal distribution by looking at density plot. For age, as you can see there are multiple red curves(imputed) which have roughly the same shape and range as the blue curve(observed). It indicated the imputed data is good. After eyeballing the 7 graphs, I think the imputation for age,bmxwt, bmxtri and bmxarml are good because the density curve for imputed data share the roughly shape and position as original density curve
+
+<center>
+
+  ![density](Rplot.png)
+  
+</center>
+
+Based on the result of scatter plot and marginal distribution, the overall imputation is good. Although for some predictors the imputed marginal distribution is off compared to observed marginal distribution, most of the predictors are in good shapes.
+
+### Part2 - Question 2:
+
+I select the 4th imputed dataset, d4, to perform model selection. After performing EDA, I found the response variable is skewed so I took log on bmxbmi and there are no interesting potential interactions based on EDA . Then I use AIC to do model selection and the final model is $log(bmxbmi)∼age+dmdeduc+ridreth2+riagendr+indfminc$. All the predictors are significant(for some categorical variables, they are at least significant in some levels) in the model and linearity, normality, Independence and equal variance are hold. Please refer to codes and outputs below.
+
+
+```{r}
+# Enter your code for question 5 here
+nhanes_imp <- mice(nhanes,m=10,
+                   defaultMethod = c("pmm", "logreg", "polyreg", "polr"),print=F)
+d4 <- complete(nhanes_imp,4)
+# Response variable distribution
+hist(d4$bmxbmi)
+form1 <- log(bmxbmi) ~ 1
+form2 <- log(bmxbmi) ~ age+riagendr+ridreth2+dmdeduc+indfminc
+null_model <- lm(form1,data=d4)
+full_model <- lm(form2,data=d4)
+final_model <- step(null_model,scope = formula(full_model),direction='forward',trace = 0)
+summary(final_model)
+ggplot(d4,aes(x=age,y=final_model$residuals))+geom_point(alpha=.7)+
+  geom_hline(yintercept=0,col="red3")
+plot(final_model,which=1,col=c("blue4"))
+plot(final_model,which=2,col=c("blue4"))
+
+```
+
+Because most of predictors are categorical variables and most of the levels are significant, I'm going to interpret levels with largest absolute value of effect. Based on the result of the final model on pooled imputed dataset, the bmi for a zero age,non-hispanic white male with less than high school education is 18.73. Holding other predictors unchanged, as the person's age increase by 1 year, the bmi will increase by 5%. Holding other predictors unchanged, the bmi index will decrease by 4% if the person's race is other race but the bmi will increase by 6% if the person is non-Hispanic Black. Holding other predictors unchanged, the bmi index will increase by 13.7% if the person's education level is high school diploma but the bmi will decrease by 12% if the person's education level is "refused".
+
+```{r}
+bmireg_imp <- with(data=nhanes_imp,lm(log(bmxbmi) ~ age+riagendr+ridreth2+dmdeduc+indfminc))
+lm_model <- pool(bmireg_imp)
+summary(lm_model)
+```
+
+* * *
+
+
+
